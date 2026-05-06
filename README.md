@@ -169,6 +169,12 @@ jupyter notebook ET_4.ipynb
 ---
 
 ## 📁 Estructura del proyecto
+cifar100-image-classification/
+├── ET_4.ipynb        # Notebook principal (ambas estrategias)
+├── requirements.txt  # Dependencias
+├── LICENSE           # Licencia MIT
+└── README.md
+
 
 ---
 
