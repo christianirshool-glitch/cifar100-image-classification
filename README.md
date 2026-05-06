@@ -6,7 +6,7 @@
 ![Jupyter](https://img.shields.io/badge/Jupyter-Notebook-orange?logo=jupyter&logoColor=white)
 [![License](https://img.shields.io/badge/Licencia-MIT-green)](LICENSE)
 
-Proyecto de Deep Learning enfocado en la clasificación de imágenes sobre el dataset **CIFAR-100** (100 clases, 60.000 imágenes). Se diseñan, entrenan y comparan dos estrategias: **Transfer Learning con fine-tuning** sobre una red preentrenada y una **CNN entrenada desde cero**.
+Proyecto de Deep Learning enfocado en la clasificación de imágenes sobre el dataset **CIFAR-100** (100 clases, 60.000 imágenes). Se diseñan, entrenan y comparan dos estrategias: **Transfer Learning con fine-tuning** sobre arquitecturas preentrenadas y una **CNN entrenada desde cero**.
 
 ---
 
@@ -30,13 +30,15 @@ Proyecto de Deep Learning enfocado en la clasificación de imágenes sobre el da
 
 CIFAR-100 es uno de los benchmarks más utilizados en visión por computador. Con 100 clases distribuidas en 20 superclases y sólo 600 imágenes por clase (32×32 px), representa un reto real de clasificación multiclase en el que la arquitectura del modelo y las técnicas de optimización son determinantes para el rendimiento final.
 
+La baja resolución espacial del dataset supone una restricción arquitectónica importante: modelos como Xception o InceptionV3 fueron descartados por requerir tamaños mínimos de entrada (71×71 o 75×75 px), evidenciando que no todas las arquitecturas preentrenadas son compatibles con este tipo de datos.
+
 ---
 
 ## 🎯 Objetivo
 
 Diseñar y comparar dos estrategias de clasificación de imágenes:
 
-- Aprovechar el conocimiento de redes preentrenadas en ImageNet mediante Transfer Learning y Fine-Tuning.
+- Aprovechar el conocimiento de redes preentrenadas en ImageNet mediante Transfer Learning, evaluando múltiples arquitecturas y aplicando Fine-Tuning.
 - Diseñar una red convolucional propia entrenada desde cero, con justificación empírica de cada decisión arquitectónica.
 - Evaluar y comparar ambos enfoques en el conjunto de test de CIFAR-100.
 
@@ -69,15 +71,17 @@ Diseñar y comparar dos estrategias de clasificación de imágenes:
 
 | Notebook | Enfoque |
 |---|---|
-| `ET_4.ipynb` — Estrategia 1 | Transfer Learning + Fine-Tuning (MobileNetV2) |
+| `ET_4.ipynb` — Estrategia 1 | Transfer Learning + Fine-Tuning (EfficientNetB0 y ConvNeXtTiny) |
 | `ET_4.ipynb` — Estrategia 2 | CNN diseñada y entrenada desde cero |
 
 ### 4. Optimización
 Ambas estrategias aplican de forma justificada:
 - **Weight Regularization** (L2)
-- **Dropout**
+- **Dropout** progresivo (0.25 en capas conv., 0.5 en capas densas)
 - **Batch Normalization**
 - **Data Augmentation**
+- **Label Smoothing** (Estrategia 2)
+- **Callbacks**: `ReduceLROnPlateau` y `EarlyStopping`
 
 ### 5. Evaluación
 - Accuracy y Loss en entrenamiento y validación.
@@ -89,28 +93,44 @@ Ambas estrategias aplican de forma justificada:
 ## 🧠 Modelos desarrollados
 
 ### 🔹 Estrategia 1: Transfer Learning + Fine-Tuning
-- **Base model:** MobileNetV2 preentrenada en ImageNet (`include_top=False`).
-- Congelación inicial de todas las capas convolucionales.
-- Top model personalizado: `Flatten → Dense(512, relu) → Dense(100, softmax)`.
-- Fine-Tuning progresivo: descongelación de capas superiores en una segunda fase de entrenamiento.
-- Optimizador: Adam · Loss: Categorical Crossentropy.
+
+Se evaluaron 6 arquitecturas preentrenadas en ImageNet. Xception e InceptionV3 fueron descartadas por incompatibilidad con la resolución 32×32. Las dos arquitecturas finalistas fueron:
+
+**EfficientNetB0** (selección por robustez):
+- Seleccionada por su excelente equilibrio y menor nivel de overfitting entre todas las arquitecturas evaluadas.
+- Diferencia mínima entre entrenamiento (~42%) y validación (~34%), indicando alta capacidad de generalización.
+- Top model: `GlobalAveragePooling2D → Dense(512, relu) → Dense(100, softmax)`.
+- Fine-Tuning aplicado: sin mejoras significativas por la baja resolución del dataset (32×32), que limita la extracción de nuevas características en capas profundas.
+- Modificaciones del Top Model (hasta 1024-512-256 neuronas) no incrementaron el accuracy; se mantuvo la arquitectura base.
+- Data Augmentation afectó negativamente al mantener la base congelada.
+- Única técnica con impacto positivo: **Batch Normalization** (ligera estabilización).
+
+**ConvNeXtTiny** (mejor accuracy final):
+- Arquitectura de convoluciones modernas con diseño inspirado en Transformers.
+- Alcanzó un **~52.70% de val_accuracy** y ~61.90% en entrenamiento tras 20 épocas.
+- Destacó en categorías con rasgos visuales distintivos: `keyboard` (precisión 0.91), `apple` (0.71).
+- Dropout y regularización mitigaron el sobreajuste inherente a su densidad arquitectónica.
+- Posicionada como la arquitectura más robusta de la Estrategia 1 para imágenes de baja resolución.
 
 ### 🔹 Estrategia 2: CNN desde cero
-- Arquitectura convolucional diseñada empíricamente.
-- Bloques `Conv2D → BatchNorm → Activation → MaxPooling → Dropout`.
-- Justificación de la selección de hiperparámetros: learning rate, batch size, número de capas y neuronas.
-- Mismas técnicas de regularización y data augmentation aplicadas de forma controlada.
+- Arquitectura secuencial diseñada empíricamente con bloques `Conv2D (3×3) → BatchNorm → Activation → MaxPooling → Dropout`.
+- Filtros incrementales: 32 → 64 → 128 para capturar características de complejidad creciente.
+- Sustitución de `Flatten` por `GlobalAveragePooling2D` para reducir drásticamente los parámetros y el overfitting.
+- Técnicas combinadas: **Data Augmentation** (traslaciones, rotaciones, volteos), **Dropout**, **L2** y **Label Smoothing**.
+- Callbacks `ReduceLROnPlateau` y `EarlyStopping` para optimizar el entrenamiento.
+- Techo de rendimiento alcanzado: ~**61-62% de accuracy**, limitado por la pérdida de información espacial de la API Sequential.
 
 ---
 
 ## 📈 Resultados
 
-| Modelo | Test Accuracy |
-|---|---|
-| MobileNetV2 (Transfer Learning + Fine-Tuning) | XX% |
-| CNN desde cero | XX% |
+| Modelo | Train Accuracy | Val Accuracy |
+|---|---|---|
+| EfficientNetB0 (Transfer Learning) | ~42% | ~34% |
+| ConvNeXtTiny (Transfer Learning) | ~61.90% | ~52.70% |
+| CNN desde cero | ~61-62% | — |
 
-> Rellena los valores con los resultados obtenidos en tu ejecución.
+> **Conclusión:** El Transfer Learning con ConvNeXtTiny superó al resto en accuracy absoluto. EfficientNetB0 destacó por su equilibrio y menor overfitting. La CNN desde cero demostró el valor de las técnicas de regularización pero encontró un techo arquitectónico propio de los modelos secuenciales.
 
 ---
 
@@ -149,14 +169,6 @@ jupyter notebook ET_4.ipynb
 ---
 
 ## 📁 Estructura del proyecto
-
-```
-cifar100-image-classification/
-├── ET_4.ipynb        # Notebook principal (ambas estrategias)
-├── requirements.txt  # Dependencias
-├── LICENSE           # Licencia MIT
-└── README.md
-```
 
 ---
 
